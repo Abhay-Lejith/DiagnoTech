@@ -10,6 +10,8 @@ import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
@@ -126,9 +128,52 @@ class _FundusScreenState extends State<FundusScreen> {
   TextEditingController _nameController = TextEditingController();
   TextEditingController _ageController = TextEditingController();
   TextEditingController _sexController = TextEditingController();
-  // Add name controller
+
+  final Set<Marker> _markers = {};
+  String apiKey = "AIzaSyCLeGuGxUxzCHvEeeKxHEdjJKzyc_yOPt0";
 
   final _databaseHelper = DatabaseHelper();
+
+  Future<Map<String, dynamic>?> _fetchDeviceLocation() async {
+    final geolocateUrl =
+        'https://www.googleapis.com/geolocation/v1/geolocate?key=$apiKey';
+
+    final geolocateResponse = await http.post(Uri.parse(geolocateUrl));
+
+    if (geolocateResponse.statusCode == 200) {
+      final locationData = json.decode(geolocateResponse.body);
+      return locationData;
+    } else {
+      print('Failed to fetch device location');
+      return null;
+    }
+  }
+
+  void _addMarker(LatLng position, String name) {
+    _markers.add(Marker(
+      markerId: MarkerId(name),
+      position: position,
+      infoWindow: InfoWindow(title: name),
+    ));
+  }
+
+  void searchNearbyHospitals(double latitude, double longitude) async {
+    final response = await http.get(Uri.parse(
+        "https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=$latitude,$longitude&radius=5000&type=hospital&key=$apiKey"));
+
+    if (response.statusCode == 200) {
+      Map<String, dynamic> data = json.decode(response.body);
+      if (data['status'] == "OK") {
+        List<dynamic> results = data['results'];
+        for (var result in results) {
+          double lat = result['geometry']['location']['lat'];
+          double lng = result['geometry']['location']['lng'];
+          String name = result['name'];
+          _addMarker(LatLng(lat, lng), name);
+        }
+      }
+    }
+  }
 
   Future<void> _makePrediction() async {
     if (_selectedImage == null) {
@@ -305,9 +350,32 @@ class _FundusScreenState extends State<FundusScreen> {
               ),
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   buildBarChart(),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await _fetchDeviceLocation().then((locationData) {
+                        if (locationData != null) {
+                          print("Location data obtained: $locationData");
+                          final latitude = locationData['location']['lat'];
+                          final longitude = locationData['location']['lng'];
+                          searchNearbyHospitals(latitude, longitude);
+                        } else {
+                          print(
+                              "Location data not obtained. Check permissions and network connectivity.");
+                        }
+                      });
+                    },
+                    child: const Text('Show Map'),
+                  ),
+                  //GoogleMap(
+                  //initialCameraPosition: CameraPosition(
+                  //  target: LatLng(0.0, 0.0),
+                  // zoom: 14,
+                  // ),
+                  //markers: _markers,
+                  // ),
                 ],
               ),
             ],
